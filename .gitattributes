@@ -1,0 +1,9 @@
+# 줄 끝(EOL) 규칙 — PC 마다 core.autocrlf 값이 달라도 같은 결과가 나오게 저장소에서 고정한다.
+# 저장소와 작업 폴더 모두 LF. Docker COPY 는 작업 폴더 파일을 그대로 이미지에 넣으므로
+# 셸 스크립트 · Dockerfile 이 CRLF 로 들어가 컨테이너에서 깨지는 것을 막는다.
+* text=auto eol=lf
+
+# Windows 전용 스크립트는 CRLF 로 둔다.
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
