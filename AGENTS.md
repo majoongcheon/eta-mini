@@ -1,3 +1,15 @@
+## API 계약
+
+모든 구현체(`MODEL_IMPL` = rule · sklearn · dl · onnx)와 다른 언어 서비스가 같은 계약을 지킨다. 테스트의 정답 기준이다.
+
+- `POST /eta`
+  - 요청: `{"distance_km": 숫자, "pending_orders": 정수}` — 두 필드만 받는다.
+  - 응답 200: `{"minutes": 유한한 숫자, "model": 구현체 이름}`
+  - 422: 숫자가 아님 · 따옴표 친 숫자(`"3"`) · `true`/`false` · 소수인 주문 수 · 음수 · NaN/무한대 · 거리 20km 초과 · 빠진 필드 · 모르는 필드 · 계산이 넘치는 큰 값. 500 이나 `minutes: null` 은 계약 위반.
+  - 거리 0km · 20km(상한 자체)는 허용한다.
+- `GET /health` → 200 `{"status": "ok", "model": 구현체 이름}`
+- 규칙 구현체(rule, 사장님 규칙): 예상 시간(분) = 기본 10분 + 1km 당 3분 + 밀린 주문 1건당 2분.
+
 ## 테스트 작성 규칙
 
 - 도구: pytest, FastAPI `TestClient`. 실제 서버를 띄우거나 네트워크를 쓰지 않는다.
