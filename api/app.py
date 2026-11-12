@@ -72,6 +72,11 @@ async def validation_error_handler(request: Request, exc: RequestValidationError
     return JSONResponse(status_code=422, content={"detail": _json_safe(jsonable_encoder(exc.errors()))})
 
 
+def _error_detail(msg: str) -> list[dict[str, object]]:
+    """계산 단계의 422 도 입력 검증 오류와 같은 모양({"detail": [{"loc", "msg", "type"}]})으로 맞춘다."""
+    return [{"loc": ["body"], "msg": msg, "type": "value_error"}]
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     """서비스 상태와 현재 구현체 이름을 돌려준다."""
@@ -85,8 +90,8 @@ def eta(req: EtaRequest) -> EtaResponse:
         minutes = estimate_delivery_minutes(req.distance_km, req.pending_orders)
     except OverflowError:
         # 주문 수가 너무 커서(예: 10**400) 계산이 넘치면 500 대신 422 로 거절한다.
-        raise HTTPException(status_code=422, detail="입력이 너무 커서 계산할 수 없습니다")
+        raise HTTPException(status_code=422, detail=_error_detail("입력이 너무 커서 계산할 수 없습니다"))
     if not math.isfinite(minutes):
         # 응답 계약(minutes: 유한한 숫자)을 지킬 수 없으면 null 을 내보내지 않고 거절한다.
-        raise HTTPException(status_code=422, detail="계산 결과가 유효한 숫자가 아닙니다")
+        raise HTTPException(status_code=422, detail=_error_detail("계산 결과가 유효한 숫자가 아닙니다"))
     return EtaResponse(minutes=minutes, model=MODEL_IMPL)

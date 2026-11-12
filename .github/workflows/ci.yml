@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest # 윈도우/macOS도 지원하지만 비용 UP
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v7
+      - uses: astral-sh/setup-uv@v10.3.3 # v8 부터 @v10 같은 주 버전 태그가 없어 전체 버전으로 고정
         with:
           enable-cache: true
       # uv.lock 그대로 설치 후 실행 (로컬·VS Code 와 같은 설정)
