@@ -7,7 +7,6 @@ on:
 # 기본 권한은 읽기만. 패키지 쓰기는 이미지 배포 작업에만 준다 (최소 권한).
 permissions:
   contents: read
-
 jobs:
   test:
     runs-on: ubuntu-latest # 윈도우/macOS도 지원하지만 비용 UP
@@ -18,7 +17,6 @@ jobs:
           enable-cache: true
       # uv.lock 그대로 설치 후 실행 (로컬·VS Code 와 같은 설정)
       - run: uv run --locked pytest -q
-
   image: # ── 배포: 테스트를 통과하면 이미지 빌드·푸시 ────────
     needs: test
     if: startsWith(github.ref, 'refs/tags/v') # v 로 시작하는 태그를 푸시했을 때만 이미지 배포
@@ -45,3 +43,20 @@ jobs:
           tags: |
             ${{ env.IMAGE }}/eta-api:${{ github.ref_name }}
             ${{ env.IMAGE }}/eta-api:latest
+deploy: # ── 서버 배포: Render 에 새 이미지로 다시 배포하라고 요청 ──
+  needs: image
+  if: startsWith(github.ref, 'refs/tags/v')
+  runs-on: ubuntu-latest
+  steps:
+    - name: Render 배포 요청
+      env:
+        DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+      run: |
+        if [ -z "$DEPLOY_HOOK" ]; then
+          echo "RENDER_DEPLOY_HOOK_URL 이 등록되지 않아 배포를 건너뛴다"
+          exit 0
+        fi
+        # 방금 올린 버전 태그의 이미지로 배포한다 (imgURL 은 URL 인코딩한 이미지 주소)
+        IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}/eta-api:${GITHUB_REF_NAME}"
+        IMG_URL=$(jq -rn --arg v "$IMAGE" '$v|@uri')
+        curl -fsS -X POST "${DEPLOY_HOOK}&imgURL=${IMG_URL}"
