@@ -4,4 +4,7 @@ artifacts/
 .DS_Store
 node_modules
 *.sqlite*
-
+# 비밀값은 Git 에 올리지 않는다
+.env
+.env.*
+.pytest_cache

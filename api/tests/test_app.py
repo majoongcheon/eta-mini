@@ -31,6 +31,32 @@ client = TestClient(app)
 rule_only = pytest.mark.skipif(MODEL_IMPL != "rule", reason="예상값은 rule 구현체 기준")
 
 
+# ---------- / (API 소개 페이지) ----------
+
+
+def test_index_returns_html_page():
+    """/ 가 200 과 text/html 로 된 HTML 문서를 돌려주는지 확인한다."""
+    res = client.get("/")
+
+    assert res.status_code == 200
+    assert res.headers["content-type"].startswith("text/html")
+    assert res.text.lstrip().lower().startswith("<!doctype html")
+
+
+def test_index_describes_the_api():
+    """소개 페이지가 두 엔드포인트(/eta, /health)와 현재 구현체 이름을 안내하는지 확인한다."""
+    text = client.get("/").text
+
+    assert "/eta" in text
+    assert "/health" in text
+    assert MODEL_IMPL in text
+
+
+def test_index_does_not_accept_post():
+    """/ 는 GET 전용이라 POST 는 405 를 돌려주는지 확인한다."""
+    assert client.post("/").status_code == 405
+
+
 # ---------- /health ----------
 
 
@@ -145,33 +171,38 @@ def test_eta_non_json_body_returns_422():
 JSON = {"Content-Type": "application/json"}
 
 
-def test_eta_nan_returns_422():
-    """NaN 은 숫자가 아니므로(AGENTS.md: 숫자가 아님 → 422) 422 를 돌려주는지 확인한다."""
-    res = client.post("/eta", content='{"distance_km": NaN, "pending_orders": 0}', headers=JSON)
-
-    assert res.status_code == 422
-
-
 @pytest.mark.parametrize(
     "raw",
     [
         pytest.param('{"distance_km": NaN, "pending_orders": 0}', id="distance-NaN"),
         pytest.param('{"distance_km": Infinity, "pending_orders": 0}', id="distance-Infinity"),
         pytest.param('{"distance_km": "inf", "pending_orders": 0}', id="distance-inf-string"),
-        pytest.param('{"distance_km": 1e308, "pending_orders": 0}', id="distance-overflows-in-rule"),
-        pytest.param('{"distance_km": 1, "pending_orders": 1' + "0" * 400 + "}", id="orders-10e400"),
+        pytest.param('{"distance_km": 1e308, "pending_orders": 0}', id="distance-huge-over-limit"),
+        # 주문 수가 float 로는 바뀌지만 2 배 하면 무한대가 되는 값 (app.py 의 유한성 검사 분기)
+        pytest.param('{"distance_km": 1, "pending_orders": 1' + "0" * 308 + "}", id="orders-result-inf"),
+        # 주문 수가 float 로도 못 바뀌는 값 (app.py 의 OverflowError 분기)
+        pytest.param('{"distance_km": 1, "pending_orders": 1' + "0" * 400 + "}", id="orders-overflow"),
     ],
 )
-def test_eta_extreme_numbers_keep_response_contract(raw):
-    """비정상 숫자 입력에도 500 이나 숫자가 아닌 minutes(null 등)를 돌려주지 않는지 확인한다 (422 또는 유한한 minutes)."""
+def test_eta_extreme_numbers_return_422(raw):
+    """NaN · 무한대 · 넘치는 큰 값은 500 이나 null 이 아니라 422 와 오류 상세(detail)를 돌려주는지 확인한다."""
     res = client.post("/eta", content=raw, headers=JSON)
 
-    # 계약: 거절하려면 422, 받아들였다면 minutes 는 유한한 숫자여야 한다.
-    assert res.status_code in (200, 422), f"{res.status_code}: {res.text[:100]}"
-    if res.status_code == 200:
-        minutes = res.json()["minutes"]
-        assert isinstance(minutes, (int, float)), f"minutes 가 숫자가 아님: {minutes!r}"
-        assert math.isfinite(minutes)
+    # 계약(AGENTS.md): NaN/무한대 · 거리 20km 초과 · 계산이 넘치는 큰 값은 모두 422.
+    assert res.status_code == 422, f"{res.status_code}: {res.text[:100]}"
+    assert "detail" in res.json()
+
+
+@pytest.mark.parametrize("digits", [308, 400])
+def test_eta_calculation_error_detail_has_same_shape_as_validation_error(digits):
+    """계산 단계에서 거절한 422 의 detail 도 입력 검증 오류처럼 {loc, msg} 목록인지 확인한다."""
+    raw = '{"distance_km": 1, "pending_orders": 1' + "0" * digits + "}"
+    res = client.post("/eta", content=raw, headers=JSON)
+
+    assert res.status_code == 422
+    detail = res.json()["detail"]
+    assert isinstance(detail, list) and detail
+    assert all({"loc", "msg"} <= set(item) for item in detail)
 
 
 # ---------- /eta 타입 엄격성 · 거리 상한 · 모르는 필드 ----------

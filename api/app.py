@@ -10,8 +10,10 @@
 - POST /eta: distance_km(0~20km 숫자), pending_orders(0 이상 정수) → {"minutes": float, "model": str}
 - 잘못된 입력(숫자가 아님 · 따옴표 친 숫자 · true/false · 음수 · NaN/무한대 · 20km 초과 · 빠진 필드 · 모르는 필드)은 422.
 - GET /health: {"status": "ok", "model": MODEL_IMPL}
+- GET /: API 소개 HTML 페이지 (JSON 계약 밖. 사람이 브라우저로 보는 안내문)
 """
 
+import html
 import importlib
 import math
 import os
@@ -19,7 +21,7 @@ import os
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 MODEL_IMPL = os.getenv("MODEL_IMPL", "rule")
@@ -72,6 +74,67 @@ async def validation_error_handler(request: Request, exc: RequestValidationError
     return JSONResponse(status_code=422, content={"detail": _json_safe(jsonable_encoder(exc.errors()))})
 
 
+def _error_detail(msg: str) -> list[dict[str, object]]:
+    """계산 단계의 422 도 입력 검증 오류와 같은 모양({"detail": [{"loc", "msg", "type"}]})으로 맞춘다."""
+    return [{"loc": ["body"], "msg": msg, "type": "value_error"}]
+
+
+# "/" 소개 페이지. 외부 CSS · JS · 이미지를 쓰지 않는 한 장짜리 HTML 이다.
+# 구현체 이름만 요청 때마다 채운다 (str.format 이 아니라 replace 를 써서 CSS 의 중괄호와 겹치지 않게 한다).
+_LANDING_HTML = """<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>delivery-eta API</title>
+<style>
+  body { font-family: system-ui, "Malgun Gothic", sans-serif; max-width: 42rem; margin: 2rem auto; padding: 0 1rem; line-height: 1.6; color: #222; }
+  h1 { margin-bottom: 0; }
+  .sub { color: #666; margin-top: 0.25rem; }
+  pre { background: #f4f4f4; padding: 0.75rem 1rem; overflow-x: auto; border-radius: 6px; }
+  code { background: #f4f4f4; padding: 0.1rem 0.3rem; border-radius: 4px; }
+  pre code { padding: 0; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { border: 1px solid #ddd; padding: 0.4rem 0.6rem; text-align: left; }
+</style>
+</head>
+<body>
+<h1>delivery-eta API</h1>
+<p class="sub">배달 예상 시간(ETA)을 분 단위로 알려 주는 API · 현재 구현체: <code>__MODEL__</code></p>
+
+<h2>엔드포인트</h2>
+<table>
+<tr><th>메서드</th><th>주소</th><th>설명</th></tr>
+<tr><td>POST</td><td><code>/eta</code></td><td>거리와 밀린 주문 수로 예상 시간(분)을 계산한다</td></tr>
+<tr><td>GET</td><td><code>/health</code></td><td>서비스 상태와 구현체 이름을 돌려준다</td></tr>
+<tr><td>GET</td><td><a href="/docs"><code>/docs</code></a></td><td>자동 생성 API 문서 (직접 호출해 볼 수 있다)</td></tr>
+</table>
+
+<h2>사용 예</h2>
+<pre><code>curl -X POST ./eta   -H "Content-Type: application/json"   -d '{"distance_km": 3, "pending_orders": 2}'
+
+→ {"minutes": 23.0, "model": "__MODEL__"}</code></pre>
+
+<h2>입력 규칙</h2>
+<ul>
+<li><code>distance_km</code>: 0 이상 20 이하의 숫자 (km)</li>
+<li><code>pending_orders</code>: 0 이상의 정수 (밀린 주문 수)</li>
+<li>두 필드만 받는다. 숫자를 따옴표로 감싸거나, true/false · 음수 · 20km 초과 · 빠진 필드 · 모르는 필드는 <b>422</b> 로 거절한다.</li>
+</ul>
+
+<h2>계산 규칙 (rule 구현체)</h2>
+<p>예상 시간(분) = 기본 10분 + 1km 당 3분 + 밀린 주문 1건당 2분</p>
+</body>
+</html>
+"""
+
+
+@app.get("/", response_class=HTMLResponse, include_in_schema=False)
+def index() -> HTMLResponse:
+    """API 소개 페이지(HTML)를 돌려준다."""
+    return HTMLResponse(_LANDING_HTML.replace("__MODEL__", html.escape(MODEL_IMPL)))
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     """서비스 상태와 현재 구현체 이름을 돌려준다."""
@@ -85,8 +148,8 @@ def eta(req: EtaRequest) -> EtaResponse:
         minutes = estimate_delivery_minutes(req.distance_km, req.pending_orders)
     except OverflowError:
         # 주문 수가 너무 커서(예: 10**400) 계산이 넘치면 500 대신 422 로 거절한다.
-        raise HTTPException(status_code=422, detail="입력이 너무 커서 계산할 수 없습니다")
+        raise HTTPException(status_code=422, detail=_error_detail("입력이 너무 커서 계산할 수 없습니다"))
     if not math.isfinite(minutes):
         # 응답 계약(minutes: 유한한 숫자)을 지킬 수 없으면 null 을 내보내지 않고 거절한다.
-        raise HTTPException(status_code=422, detail="계산 결과가 유효한 숫자가 아닙니다")
+        raise HTTPException(status_code=422, detail=_error_detail("계산 결과가 유효한 숫자가 아닙니다"))
     return EtaResponse(minutes=minutes, model=MODEL_IMPL)
