@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "ClaudeInChromeDomain(eta-api-latest.onrender.com)"
+    ]
+  }
+}
