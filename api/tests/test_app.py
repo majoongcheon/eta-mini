@@ -31,6 +31,32 @@ client = TestClient(app)
 rule_only = pytest.mark.skipif(MODEL_IMPL != "rule", reason="예상값은 rule 구현체 기준")
 
 
+# ---------- / (API 소개 페이지) ----------
+
+
+def test_index_returns_html_page():
+    """/ 가 200 과 text/html 로 된 HTML 문서를 돌려주는지 확인한다."""
+    res = client.get("/")
+
+    assert res.status_code == 200
+    assert res.headers["content-type"].startswith("text/html")
+    assert res.text.lstrip().lower().startswith("<!doctype html")
+
+
+def test_index_describes_the_api():
+    """소개 페이지가 두 엔드포인트(/eta, /health)와 현재 구현체 이름을 안내하는지 확인한다."""
+    text = client.get("/").text
+
+    assert "/eta" in text
+    assert "/health" in text
+    assert MODEL_IMPL in text
+
+
+def test_index_does_not_accept_post():
+    """/ 는 GET 전용이라 POST 는 405 를 돌려주는지 확인한다."""
+    assert client.post("/").status_code == 405
+
+
 # ---------- /health ----------
 
 
