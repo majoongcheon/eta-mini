@@ -76,6 +76,7 @@ jobs:
       - run: uv run --locked python -m training.validate_model sklearn # 실패하면 여기서 중단 → 배포 안 됨
       - run: uv run --locked --group train python -m training.train_dl
       - run: uv run --locked python -m training.validate_model dl
+      - run: uv run --locked --group train python -m training.export_onnx # 원본 vs ONNX 예측 일치 확인 포함
       - uses: actions/upload-artifact@v7
         with:
           name: model-artifacts
