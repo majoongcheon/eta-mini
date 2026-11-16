@@ -114,3 +114,33 @@ image: # ── 이미지 빌드 + ghcr.io 에 배포 ──
         with:
           name: model-artifacts
           path: artifacts/
+# ── MLOps 3단계: 교차 런타임 일치 테스트 ─────────────────────
+  parity:
+    needs: train
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: model-artifacts
+          path: artifacts/
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - name: Go·Rust 이미지 빌드
+        run: |
+          docker build -f api-go/Dockerfile -t eta-go .
+          docker build -f api-rust/Dockerfile -t eta-rust .
+      - name: 세 서비스 실행 (Python 8080, Go 8081, Rust 8082. 컨테이너 안은 모두 8080)
+        run: |
+          # Python 쪽은 학습한 원본(scikit-learn) 모델로 띄워 Go·Rust(ONNX)와 비교한다
+          MODEL_IMPL=sklearn uv run --locked --group train uvicorn api.app:app --port 8080 &
+          docker run -d -p 8081:8080 eta-go
+          docker run -d -p 8082:8080 eta-rust
+          for i in $(seq 1 60); do
+            curl -sf -o /dev/null localhost:8080/health && curl -sf -o /dev/null localhost:8081/health \
+              && curl -sf -o /dev/null localhost:8082/health && exit 0
+            sleep 1
+          done
+          exit 1
+      - run: uv run --locked python -m training.check_parity # Python vs Go, Python vs Rust
