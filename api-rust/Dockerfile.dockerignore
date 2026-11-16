@@ -1,0 +1,8 @@
+# 빌드에 필요한 것만 컨텍스트로 보낸다 (허용 목록 방식). .env · .git · .venv · 학습 산출물이 이미지에 섞이지 않는다.
+# 구조에서의 위치: 루트 컨텍스트로 api-rust/Dockerfile 을 빌드할 때 읽힌다 (<Dockerfile 이름>.dockerignore).
+*
+!api-rust
+!uv.lock
+!artifacts/model_sklearn.onnx
+api-rust/Dockerfile*
+api-rust/target

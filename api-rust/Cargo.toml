@@ -1,0 +1,18 @@
+[package]
+name = "eta-rust"
+version = "0.1.0"
+edition = "2021"
+description = "delivery-eta Rust 서비스 (api/app.py 와 같은 API 계약, ONNX Runtime 으로 같은 모델을 서빙한다)"
+
+[dependencies]
+axum = "0.8"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal"] }
+serde_json = { version = "1", features = ["raw_value"] }
+# load-dynamic: ONNX Runtime 공유 라이브러리를 실행할 때 ORT_LIB 경로에서 읽는다 (ort 가 자체 런타임을 내려받지 않는다).
+ort = { version = "=2.0.0-rc.15", default-features = false, features = ["std", "load-dynamic"] }
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
+
+[profile.release]
+strip = true
